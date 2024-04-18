@@ -85,7 +85,7 @@ class LunarLanderREINFORCE:
                     self.episode_returns.append(episode_return)
                     self.episode_times.append(self.total_time)
 
-                batch_weights += [episode_return] * episode_length
+                batch_weights += [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
                 
                 state, _ = self.env.reset()
                 done = False
@@ -166,14 +166,15 @@ def train_reinforce_model():
     model_params = {
             'lr': 0.001,  
             'batch_size': 1024,
-            'gamma': .995,
-            'early_stopping_return': 420,
+            'gamma': .999,
+            'early_stopping_return': 100,
+            'entropy_reg_factor': 0.01,
     }
 
     env = gym.make("LunarLander-v2")
     reinforcer = LunarLanderREINFORCE(env=env, **model_params)
 
-    reinforcer.train_model(num_episodes=100)
+    reinforcer.train_model(num_episodes=500)
     watch_env = gym.make("LunarLander-v2", render_mode='human')
     reinforcer.plot_learning()
     reinforcer.dqn_render_run(env=watch_env)

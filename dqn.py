@@ -25,7 +25,7 @@ class DeepQModel(nn.Module):
         return self.layer3(x)
     
     def get_policy(self, x):
-        return Categorical(logits=self.forward(x))
+        return Categorical(logits=self.forward(x)) # TODO: props or logits??
     
     def get_action(self, x):
         return self.get_policy(x).sample().item()
