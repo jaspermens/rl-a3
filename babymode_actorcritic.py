@@ -92,23 +92,37 @@ class LunarLanderAC:
             self.episode_returns.append(episode_return)
             self.episode_times.append(self.total_time)
 
-        # trace_weights = [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
+        trace_weights = [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
 
         if freeze_gradients:
             return episode_return
         
         backup_targets = nstep_backup_targets(trace_states, trace_actions, trace_rewards)
         # value_loss = torch.as_tensor(np.mean((backup_targets - self.critic_net.get_value(np.array(trace_states)).numpy())**2))
-        value_loss = (torch.as_tensor(backup_targets) - self.critic_net.get_value(torch.as_tensor(np.array(trace_states)))).square().sum()
+        but = torch.as_tensor(backup_targets)
+        values = self.critic_net.get_value(np.array(trace_states)).squeeze()
+        trace_advantages = but - values
+
         # compute and bp loss
+        # policy_loss = self.policy_loss_function(
+        #     torch.as_tensor(np.array(trace_states)), 
+        #     torch.as_tensor(trace_actions), 
+        #     torch.as_tensor(trace_weights),)
+        policy_loss = self.policy_loss_baseline_subtracted(
+            torch.as_tensor(np.array(trace_states)), 
+            torch.as_tensor(trace_actions), 
+            trace_advantages.detach(),
+            # torch.as_tensor(np.array(trace_weights)),
+        )
+
+                                #   trace_advantages,
+        
         self.policy_optimizer.zero_grad() # remove gradients from previous steps
-        policy_loss = self.policy_loss_function(torch.as_tensor(np.array(trace_states)), 
-                                  torch.as_tensor(trace_actions), 
-                                  torch.as_tensor(backup_targets))
         policy_loss.backward()            # compute gradients
         nn.utils.clip_grad_value_(self.actor_net.parameters(), 100) # clip gradients
         self.policy_optimizer.step()      # apply gradients
         
+        value_loss = trace_advantages.square().sum()
         
         self.value_optimizer.zero_grad() # remove gradients from previous steps
         loss = torch.as_tensor(value_loss)
@@ -122,7 +136,12 @@ class LunarLanderAC:
     def policy_loss_function(self, states, actions, backup_targets) -> torch.Tensor:
         policy = self.actor_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
-        return - (log_probabilities * backup_targets + self.entropy_reg_factor * policy.entropy()).mean()
+        return - (log_probabilities * backup_targets + self.entropy_reg_factor * policy.entropy()).sum()
+
+    def policy_loss_baseline_subtracted(self, states, actions, advantages) -> torch.Tensor:
+        policy = self.actor_net.get_policy(states)
+        log_probabilities = policy.log_prob(actions)
+        return - (log_probabilities * advantages + self.entropy_reg_factor * policy.entropy()).sum()
 
 
     def train_model(self, num_episodes: int):
@@ -182,7 +201,7 @@ def train_reinforce_model():
     env = gym.make("LunarLander-v2")
     reinforcer = LunarLanderAC(env=env, **model_params)
 
-    reinforcer.train_model(num_episodes=300)
+    reinforcer.train_model(num_episodes=500)
     watch_env = gym.make("LunarLander-v2", render_mode='human')
     reinforcer.plot_learning()
     reinforcer.render_run(env=watch_env)
