@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from actor_critic_net import ActorCriticNet
+from actor_critic_net import ActorCriticNet, ActorNet, CriticNet
 
 class LunarLanderAC:
     """Main class handling the training of an actor-critic model in box2d gym environments"""
@@ -25,7 +25,7 @@ class LunarLanderAC:
         self.batch_size = batch_size
         self.env = env  
         self.entropy_reg_factor = entropy_reg_factor
-        self.n_steps = 5
+        self.n_steps = 15
 
         if early_stopping_return is None:   # if not specified, then take from env
             self.early_stopping_return = env.spec.reward_threshold
@@ -38,13 +38,15 @@ class LunarLanderAC:
         # init the model and agent
         n_inputs = env.observation_space.shape[0]
         n_actions = env.action_space.n
-        self.ac_net = ActorCriticNet(n_inputs=n_inputs, n_actions=n_actions)
 
+        # self.ac_net = ActorCriticNet(n_inputs=n_inputs, n_actions=n_actions)
+        self.actor_net = ActorNet(n_actions=n_actions, n_inputs=n_inputs)
+        self.critic_net = CriticNet(n_actions=n_actions, n_inputs=n_inputs)
         # TODO: value network - extra network or just extra output head?
 
         # TODO: separate optimizers?
-        self.policy_optimizer = Adam(self.ac_net.parameters(), lr=lr)
-        self.value_optimizer = Adam(self.ac_net.parameters(), lr=lr)
+        self.policy_optimizer = Adam(self.actor_net.parameters(), lr=lr)
+        self.value_optimizer = Adam(self.critic_net.parameters(), lr=lr)
         
     def reset_counters(self):
         self.episode_returns = [] 
@@ -58,7 +60,7 @@ class LunarLanderAC:
             targets = np.zeros_like(actions)
             for t in range(len(states)):
                 max_k = np.minimum(t + self.n_steps, len(states)-1) - t
-                targets[t] = np.sum([rewards[t+k]*self.gamma**k for k in range(max_k)]) + (self.gamma**self.n_steps * self.ac_net.get_value(states[max_k])) 
+                targets[t] = np.sum([rewards[t+k]*self.gamma**k for k in range(max_k)]) + self.gamma**self.n_steps * self.critic_net.get_value(states[max_k]) 
 
             return targets
         
@@ -74,7 +76,7 @@ class LunarLanderAC:
         while not done:
             trace_states.append(state)
 
-            action = self.ac_net.get_action(state)
+            action = self.actor_net.get_action(state)
             state, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
 
@@ -96,14 +98,15 @@ class LunarLanderAC:
             return episode_return
         
         backup_targets = nstep_backup_targets(trace_states, trace_actions, trace_rewards)
-        value_loss = torch.as_tensor(np.mean(np.sum([backup_targets - self.ac_net.get_value(trace_states)])**2))
+        # value_loss = torch.as_tensor(np.mean((backup_targets - self.critic_net.get_value(np.array(trace_states)).numpy())**2))
+        value_loss = (torch.as_tensor(backup_targets) - self.critic_net.get_value(torch.as_tensor(np.array(trace_states)))).square().sum()
         # compute and bp loss
         self.policy_optimizer.zero_grad() # remove gradients from previous steps
         policy_loss = self.policy_loss_function(torch.as_tensor(np.array(trace_states)), 
                                   torch.as_tensor(trace_actions), 
                                   torch.as_tensor(backup_targets))
         policy_loss.backward()            # compute gradients
-        nn.utils.clip_grad_value_(self.ac_net.parameters(), 100) # clip gradients
+        nn.utils.clip_grad_value_(self.actor_net.parameters(), 100) # clip gradients
         self.policy_optimizer.step()      # apply gradients
         
         
@@ -111,13 +114,13 @@ class LunarLanderAC:
         loss = torch.as_tensor(value_loss)
 
         loss.backward()            # compute gradients
-        nn.utils.clip_grad_value_(self.ac_net.parameters(), 100) # clip gradients
+        nn.utils.clip_grad_value_(self.critic_net.parameters(), 100) # clip gradients
         self.value_optimizer.step()      # apply gradients
 
         return episode_return
     
-    def policy_loss_function(self, states, actions, backup_targets):
-        policy = self.ac_net.get_policy(states)
+    def policy_loss_function(self, states, actions, backup_targets) -> torch.Tensor:
+        policy = self.actor_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
         return - (log_probabilities * backup_targets + self.entropy_reg_factor * policy.entropy()).mean()
 
@@ -153,7 +156,7 @@ class LunarLanderAC:
             while not done:
                 state = torch.from_numpy(state).unsqueeze(0)
                 with torch.no_grad():
-                    action = self.ac_net.get_action(state)
+                    action = self.actor_net.get_action(state)
                 state, _, terminated, truncated, _ = env.step(action=action)
 
                 done = terminated or truncated
@@ -179,7 +182,7 @@ def train_reinforce_model():
     env = gym.make("LunarLander-v2")
     reinforcer = LunarLanderAC(env=env, **model_params)
 
-    reinforcer.train_model(num_episodes=500)
+    reinforcer.train_model(num_episodes=300)
     watch_env = gym.make("LunarLander-v2", render_mode='human')
     reinforcer.plot_learning()
     reinforcer.render_run(env=watch_env)
