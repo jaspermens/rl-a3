@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.distributions.categorical import Categorical
 
-class DeepQModel(nn.Module):
+class ActorCriticNet(nn.Module):
     def __init__(self, n_inputs, n_actions):
         super().__init__()
         self.n_inputs = n_inputs
@@ -16,6 +16,8 @@ class DeepQModel(nn.Module):
         self.layer2 = nn.Linear(n_nodes, n_nodes)
         self.act2 = nn.Tanh()
         self.layer3 = nn.Linear(n_nodes, n_actions)
+
+        self.value_output = nn.Linear(n_nodes, 1)
         
     def forward(self, x):
         if isinstance(x, np.ndarray):
@@ -29,3 +31,11 @@ class DeepQModel(nn.Module):
     
     def get_action(self, x):
         return self.get_policy(x).sample().item()
+
+    def get_value(self, x):
+        if isinstance(x, np.ndarray):
+            x = torch.Tensor(np.array([x]))
+
+        x = self.act1(self.layer1(x))
+        x = self.act2(self.layer2(x))
+        return self.value_output(x)

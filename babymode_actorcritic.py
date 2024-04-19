@@ -8,15 +8,10 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from policies import Policy
-from dqn import DeepQModel
+from actor_critic_net import ActorCriticNet
 
-# TODO: Policy
-# TODO: early stopping fix
-
-
-class LunarLanderREINFORCE:
-    """Main class handling the training of a DQN in a Gym environment"""
+class LunarLanderAC:
+    """Main class handling the training of an actor-critic model in box2d gym environments"""
     def __init__(self, 
                  env: gym.Env,                      # gym environment we'll be training in
                  lr: float,                         # learning rate
@@ -30,6 +25,7 @@ class LunarLanderREINFORCE:
         self.batch_size = batch_size
         self.env = env  
         self.entropy_reg_factor = entropy_reg_factor
+        self.n_steps = 5
 
         if early_stopping_return is None:   # if not specified, then take from env
             self.early_stopping_return = env.spec.reward_threshold
@@ -42,93 +38,103 @@ class LunarLanderREINFORCE:
         # init the model and agent
         n_inputs = env.observation_space.shape[0]
         n_actions = env.action_space.n
-        self.policy_net = DeepQModel(n_inputs=n_inputs, n_actions=n_actions)
+        self.ac_net = ActorCriticNet(n_inputs=n_inputs, n_actions=n_actions)
 
-        self.optimizer = Adam(self.policy_net.parameters(), lr=lr)
+        # TODO: value network - extra network or just extra output head?
+
+        # TODO: separate optimizers?
+        self.policy_optimizer = Adam(self.ac_net.parameters(), lr=lr)
+        self.value_optimizer = Adam(self.ac_net.parameters(), lr=lr)
         
     def reset_counters(self):
         self.episode_returns = [] 
         self.episode_times = []
         self.total_time = 0
 
+    def train_episode_actorcritic(self, freeze_gradients: bool = False):
+        """Performs one epoch of actor-critic training"""
 
-    def train_batch_reinforce(self, freeze_gradients: bool = False):
-        """Fills one batch with experiences and updates the network"""
+        def nstep_backup_targets(states, actions, rewards):
+            targets = np.zeros_like(actions)
+            for t in range(len(states)):
+                max_k = np.minimum(t + self.n_steps, len(states)-1) - t
+                targets[t] = np.sum([rewards[t+k]*self.gamma**k for k in range(max_k)]) + (self.gamma**self.n_steps * self.ac_net.get_value(states[max_k])) 
+
+            return targets
+        
         state, _ = self.env.reset()
 
         done = False
-        batch_states = []
-        batch_weights = []
-        batch_actions = []
-        batch_returns = []
+        trace_states = []
+        trace_rewards = []
+        trace_actions = []
         episode_return = 0
         episode_length = 0
 
-        while True:
-            batch_states.append(state)
+        while not done:
+            trace_states.append(state)
 
-            action = self.policy_net.get_action(state)
+            action = self.ac_net.get_action(state)
             state, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
 
             # append experience
             episode_return += reward
-            batch_actions.append(action)
+            trace_actions.append(action)
+            trace_rewards.append(reward)
             episode_length += 1
             self.total_time += 1
 
-            if done:    
-                # compute episode rewards etc
-                batch_returns.append(episode_return)
-                # use gamma here???
-                if not freeze_gradients:
-                    self.episode_returns.append(episode_return)
-                    self.episode_times.append(self.total_time)
+        # use gamma here???
+        if not freeze_gradients:
+            self.episode_returns.append(episode_return)
+            self.episode_times.append(self.total_time)
 
-                batch_weights += [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
-                
-                state, _ = self.env.reset()
-                done = False
-                episode_return = 0
-                episode_length = 0
-
-                if len(batch_states) > self.batch_size:
-                    break
-            
-        # compute and bp loss
+        # trace_weights = [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
 
         if freeze_gradients:
-            return np.mean(batch_returns)
+            return episode_return
         
-        self.optimizer.zero_grad() # remove gradients from previous steps
-        loss = self.loss_function(torch.as_tensor(np.array(batch_states)), 
-                                  torch.as_tensor(batch_actions), 
-                                  torch.as_tensor(batch_weights))
-        loss.backward()            # compute gradients
-        nn.utils.clip_grad_value_(self.policy_net.parameters(), 100) # clip gradients
-        self.optimizer.step()      # apply gradients
+        backup_targets = nstep_backup_targets(trace_states, trace_actions, trace_rewards)
+        value_loss = torch.as_tensor(np.mean(np.sum([backup_targets - self.ac_net.get_value(trace_states)])**2))
+        # compute and bp loss
+        self.policy_optimizer.zero_grad() # remove gradients from previous steps
+        policy_loss = self.policy_loss_function(torch.as_tensor(np.array(trace_states)), 
+                                  torch.as_tensor(trace_actions), 
+                                  torch.as_tensor(backup_targets))
+        policy_loss.backward()            # compute gradients
+        nn.utils.clip_grad_value_(self.ac_net.parameters(), 100) # clip gradients
+        self.policy_optimizer.step()      # apply gradients
+        
+        
+        self.value_optimizer.zero_grad() # remove gradients from previous steps
+        loss = torch.as_tensor(value_loss)
 
-        return np.mean(batch_returns)
+        loss.backward()            # compute gradients
+        nn.utils.clip_grad_value_(self.ac_net.parameters(), 100) # clip gradients
+        self.value_optimizer.step()      # apply gradients
+
+        return episode_return
     
-    def loss_function(self, states, actions, weights):
-        policy = self.policy_net.get_policy(states)
+    def policy_loss_function(self, states, actions, backup_targets):
+        policy = self.ac_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
-        return - (log_probabilities * weights + self.entropy_reg_factor * policy.entropy()).mean()
+        return - (log_probabilities * backup_targets + self.entropy_reg_factor * policy.entropy()).mean()
 
 
     def train_model(self, num_episodes: int):
         for _ in tqdm(range(num_episodes), total=num_episodes):
-            batch_return = self.train_batch_reinforce()
-            if batch_return >= self.early_stopping_return:
-                stop_early = self.do_early_stopping()
-                if stop_early:
-                    print("STOPPING EARLY LOL")
-                    break
+            batch_return = self.train_episode_actorcritic()
+            if batch_return < self.early_stopping_return:
+                continue
+            if self.do_early_stopping():
+                print("STOPPING EARLY LOL")
+                break
 
     def do_early_stopping(self):
         eval_returns = []
         for _ in range(5):
-            eval_return = self.train_batch_reinforce(freeze_gradients=True)
+            eval_return = self.train_episode_actorcritic(freeze_gradients=True)
             eval_returns.append(eval_return)
 
         if np.mean(eval_returns) >= self.early_stopping_return:
@@ -136,7 +142,7 @@ class LunarLanderREINFORCE:
 
         return False
 
-    def dqn_render_run(self, env: gym.Env, n_episodes_to_plot: int = 10) -> None:
+    def render_run(self, env: gym.Env, n_episodes_to_plot: int = 10) -> None:
         """Runs a single evaluation episode while rendering the environment for visualization."""
 
         env.reset(seed=4309)
@@ -147,8 +153,7 @@ class LunarLanderREINFORCE:
             while not done:
                 state = torch.from_numpy(state).unsqueeze(0)
                 with torch.no_grad():
-                    q_values = self.policy_net.forward(state)
-                action = Policy.GREEDY(q_values)
+                    action = self.ac_net.get_action(state)
                 state, _, terminated, truncated, _ = env.step(action=action)
 
                 done = terminated or truncated
@@ -172,12 +177,12 @@ def train_reinforce_model():
     }
 
     env = gym.make("LunarLander-v2")
-    reinforcer = LunarLanderREINFORCE(env=env, **model_params)
+    reinforcer = LunarLanderAC(env=env, **model_params)
 
     reinforcer.train_model(num_episodes=500)
     watch_env = gym.make("LunarLander-v2", render_mode='human')
     reinforcer.plot_learning()
-    reinforcer.dqn_render_run(env=watch_env)
+    reinforcer.render_run(env=watch_env)
 
 if __name__ == "__main__":
     train_reinforce_model()
