@@ -22,6 +22,7 @@ class LunarLanderAC:
                  backup_depth: int = 10,
                  eval_interval: int = 2000,     # evaluate every N training steps
                  n_eval_episodes: int = 5,        # average eval rewards over N episodes
+                 num_training_steps: int = 200_000,
                  ):
         
         self.gamma = gamma
@@ -32,6 +33,7 @@ class LunarLanderAC:
         self.n_steps = backup_depth
         self.eval_interval = eval_interval
         self.n_eval_episodes = n_eval_episodes
+        self.num_training_steps = num_training_steps
 
         if early_stopping_return is None:   # if not specified, then take from env
             self.early_stopping_return = self.env.spec.reward_threshold
@@ -159,13 +161,20 @@ class LunarLanderAC:
         return - (log_probabilities * advantages + self.entropy_reg_factor * policy.entropy()).sum()
 
     def train_model(self, num_episodes: int):
-        for _ in tqdm(range(num_episodes), total=num_episodes):
+        # for _ in tqdm(range(num_episodes), total=num_episodes):
+        pbar = tqdm(total=self.num_training_steps)
+        curtime = 0
+        while self.total_time < self.num_training_steps:
+            pbar.update(self.total_time - curtime)
+            curtime = self.total_time
             batch_return = self.train_episode_actorcritic()
             if batch_return < self.early_stopping_return:
                 continue
             if self.do_early_stopping():
                 print("STOPPING EARLY LOL")
                 break
+
+        pbar.close()
 
     def do_early_stopping(self):
         eval_score = self.evaluate_model(store_output=False)
@@ -202,7 +211,6 @@ class LunarLanderAC:
 def train_reinforce_model(): 
     model_params = {
             'lr': 5e-4,
-            'batch_size': 1024,
             'gamma': .99,
             'early_stopping_return': None,
             'entropy_reg_factor': 0.1,
