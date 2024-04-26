@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 from babymode_actorcritic import LunarLanderAC
 
 #Parameters
-num_repetitions = 5
-training_steps = 400_000
+num_repetitions = 3
+training_steps = 10_000
 model_params = {
             'lr': 0.001,
             'gamma': .99,
@@ -22,7 +22,7 @@ for repetition in range(num_repetitions):
 
     #Train the reinforcer
     try:
-        reinforcer.train_model(num_episodes=training_episode)
+        reinforcer.train_model()
     except KeyboardInterrupt:
         pass
     
