@@ -41,12 +41,14 @@ for repetition in range(num_repetitions):
 fig,ax = plt.subplots(figsize=(8,8))
 
 ax.plot(eval_times,mean_eval_returns,label="Mean eval reward over n reps")
-plt.figtext(0.85,0.85,f"Parameters\n",bbox=dict(facecolor='black', alpha=0.8, edgecolor='black'),color="white")
+param_string = f"Parameters\n$\\alpha$ = {model_params['lr']}\n$\gamma$ = {model_params['gamma']}\nER = {model_params['entropy_reg_factor']}\nBD = {model_params['backup_depth']}"
+plt.figtext(0.85,0.85,param_string,bbox=dict(facecolor='black', alpha=0.8, edgecolor='black'),color="white")
 
 ax.grid(alpha=0.5)
 ax.set_xlabel("Eval timesteps")
-ax.set_ylabel("mean eval episode Return")
+ax.set_ylabel("Mean eval episode reward")
 ax.legend()
+fig.suptitle(f"{num_repetitions}-repetition averaged evaluation reward")
 if save_figure:
     plt.savefig("temp_name.png",dpi=500)
 plt.show()
