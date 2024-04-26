@@ -97,7 +97,7 @@ class LunarLanderAC:
             trace_rewards.append(reward)
             episode_length += 1
 
-            if self.total_time + episode_length % self.eval_interval == 0:
+            if self.total_time + episode_length % self.eval_interval == 0 and not for_eval:
                 self.evaluate_model()
 
 
