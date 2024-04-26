@@ -62,7 +62,7 @@ def do_study():
     study = optuna.create_study(direction="maximize", 
                                 sampler=optuna.samplers.GPSampler())
     
-    study.optimize(objective, n_trials=10)
+    study.optimize(objective_AC, n_trials=10)
     
     print("best params:", study.best_params)
     print("best value:", study.best_value)
