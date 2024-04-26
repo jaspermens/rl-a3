@@ -8,27 +8,34 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from actor_critic_net import ActorCriticNet, ActorNet, CriticNet
+from actor_critic_net import ActorNet, CriticNet
 
 class LunarLanderAC:
     """Main class handling the training of an actor-critic model in box2d gym environments"""
     def __init__(self, 
-                 env: gym.Env,                      # gym environment we'll be training in
+                 envname: str,                      # gym environment we'll be training in
                  lr: float,                         # learning rate
                  batch_size: int,                   # (only used with experience replay)
                  gamma: float = 1,                  
                  entropy_reg_factor: float = .1,
                  early_stopping_return: int | None = None, # critical reward value for early stopping
+                 backup_depth: int = 10,
+                 eval_interval: int = 2000,     # evaluate every N training steps
+                 n_eval_episodes: int = 5,        # average eval rewards over N episodes
                  ):
         
         self.gamma = gamma
         self.batch_size = batch_size
-        self.env = env  
+        self.envname = envname
+        self.env = gym.make(envname)  
+        self.eval_env = gym.make(envname)
         self.entropy_reg_factor = entropy_reg_factor
-        self.n_steps = 15
+        self.n_steps = backup_depth
+        self.eval_interval = eval_interval
+        self.n_eval_episodes = n_eval_episodes
 
         if early_stopping_return is None:   # if not specified, then take from env
-            self.early_stopping_return = env.spec.reward_threshold
+            self.early_stopping_return = self.env.spec.reward_threshold
         else:
             self.early_stopping_return = early_stopping_return
 
@@ -36,8 +43,8 @@ class LunarLanderAC:
         self.reset_counters()
         
         # init the model and agent
-        n_inputs = env.observation_space.shape[0]
-        n_actions = env.action_space.n
+        n_inputs = self.env.observation_space.shape[0]
+        n_actions = self.env.action_space.n
 
         # self.ac_net = ActorCriticNet(n_inputs=n_inputs, n_actions=n_actions)
         self.actor_net = ActorNet(n_actions=n_actions, n_inputs=n_inputs)
@@ -51,9 +58,11 @@ class LunarLanderAC:
     def reset_counters(self):
         self.episode_returns = [] 
         self.episode_times = []
+        self.eval_returns = []
+        self.eval_times = []
         self.total_time = 0
 
-    def train_episode_actorcritic(self, freeze_gradients: bool = False):
+    def train_episode_actorcritic(self, for_eval: bool = False):
         """Performs one epoch of actor-critic training"""
 
         def nstep_backup_targets(states, actions, rewards):
@@ -64,7 +73,9 @@ class LunarLanderAC:
 
             return targets
         
-        state, _ = self.env.reset()
+        env = self.eval_env if for_eval else self.env
+        
+        state, _ = env.reset()
 
         done = False
         trace_states = []
@@ -77,7 +88,7 @@ class LunarLanderAC:
             trace_states.append(state)
 
             action = self.actor_net.get_action(state)
-            state, reward, terminated, truncated, _ = self.env.step(action)
+            state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
             # append experience
@@ -87,16 +98,17 @@ class LunarLanderAC:
             episode_length += 1
             self.total_time += 1
 
-        # use gamma here???
-        if not freeze_gradients:
-            self.episode_returns.append(episode_return)
-            self.episode_times.append(self.total_time)
+            if self.total_time % self.eval_interval == 0:
+                self.evaluate_model()
 
-        trace_weights = [episode_return * self.gamma**i for i in range(episode_length)[::-1]]
 
-        if freeze_gradients:
+        if for_eval:
             return episode_return
         
+        # use gamma here???
+        self.episode_returns.append(episode_return)
+        self.episode_times.append(self.total_time)
+
         backup_targets = nstep_backup_targets(trace_states, trace_actions, trace_rewards)
         # value_loss = torch.as_tensor(np.mean((backup_targets - self.critic_net.get_value(np.array(trace_states)).numpy())**2))
         but = torch.as_tensor(backup_targets)
@@ -104,18 +116,11 @@ class LunarLanderAC:
         trace_advantages = but - values
 
         # compute and bp loss
-        # policy_loss = self.policy_loss_function(
-        #     torch.as_tensor(np.array(trace_states)), 
-        #     torch.as_tensor(trace_actions), 
-        #     torch.as_tensor(trace_weights),)
         policy_loss = self.policy_loss_baseline_subtracted(
             torch.as_tensor(np.array(trace_states)), 
             torch.as_tensor(trace_actions), 
             trace_advantages.detach(),
-            # torch.as_tensor(np.array(trace_weights)),
         )
-
-                                #   trace_advantages,
         
         self.policy_optimizer.zero_grad() # remove gradients from previous steps
         policy_loss.backward()            # compute gradients
@@ -133,6 +138,20 @@ class LunarLanderAC:
 
         return episode_return
     
+    def evaluate_model(self, store_output: bool = True):
+        episode_scores = []
+        for _ in range(self.n_eval_episodes):
+            episode_score = self.train_episode_actorcritic(for_eval=True)
+            episode_scores.append(episode_score)
+
+        mean_return = np.mean(episode_scores)
+
+        if store_output:
+            self.eval_returns.append(mean_return)
+            self.eval_times.append(self.total_time)
+
+        return mean_return
+
     def policy_loss_function(self, states, actions, backup_targets) -> torch.Tensor:
         policy = self.actor_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
@@ -142,7 +161,6 @@ class LunarLanderAC:
         policy = self.actor_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
         return - (log_probabilities * advantages + self.entropy_reg_factor * policy.entropy()).sum()
-
 
     def train_model(self, num_episodes: int):
         for _ in tqdm(range(num_episodes), total=num_episodes):
@@ -154,19 +172,12 @@ class LunarLanderAC:
                 break
 
     def do_early_stopping(self):
-        eval_returns = []
-        for _ in range(5):
-            eval_return = self.train_episode_actorcritic(freeze_gradients=True)
-            eval_returns.append(eval_return)
+        eval_score = self.evaluate_model(store_output=False)
+        return eval_score >= self.early_stopping_return
 
-        if np.mean(eval_returns) >= self.early_stopping_return:
-            return True
-
-        return False
-
-    def render_run(self, env: gym.Env, n_episodes_to_plot: int = 10) -> None:
+    def render_run(self, n_episodes_to_plot: int = 10) -> None:
         """Runs a single evaluation episode while rendering the environment for visualization."""
-
+        env = gym.make(self.envname, render_mode="human")
         env.reset(seed=4309)
         for _ in range(n_episodes_to_plot):
             state, _ = env.reset()  # Uses the newly created environment with render=human
@@ -180,31 +191,37 @@ class LunarLanderAC:
 
                 done = terminated or truncated
 
-            self.env.reset()
+            env.reset()
         
     def plot_learning(self):
         fig, ax = plt.subplots()
         ax.grid(True, alpha=.5)
-        ax.plot(self.episode_times, self.episode_returns)
+        ax.plot(self.eval_times, self.eval_returns)
+        ax.set_xlabel("Training steps")
+        ax.set_ylabel("Training Episode Return")
         plt.show()
 
 
 def train_reinforce_model(): 
     model_params = {
-            'lr': 0.001,  
+            'lr': 0.001,
             'batch_size': 1024,
-            'gamma': .999,
-            'early_stopping_return': 100,
-            'entropy_reg_factor': 0.01,
+            'gamma': .99,
+            'early_stopping_return': None,
+            'entropy_reg_factor': 0.1,
+            'backup_depth': 500,
+            'envname': "LunarLander-v2"
     }
 
-    env = gym.make("LunarLander-v2")
-    reinforcer = LunarLanderAC(env=env, **model_params)
+    reinforcer = LunarLanderAC(**model_params)
 
-    reinforcer.train_model(num_episodes=500)
-    watch_env = gym.make("LunarLander-v2", render_mode='human')
+    try:
+        reinforcer.train_model(num_episodes=2000)
+    except KeyboardInterrupt:
+        pass
+    
+    reinforcer.render_run(n_episodes_to_plot=10)
     reinforcer.plot_learning()
-    reinforcer.render_run(env=watch_env)
 
 if __name__ == "__main__":
     train_reinforce_model()
