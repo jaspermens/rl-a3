@@ -10,6 +10,7 @@ from torch.optim import Adam
 
 from actor_critic_net import ActorNet, CriticNet
 
+
 class LunarLanderAC:
     """Main class handling the training of an actor-critic model in box2d gym environments"""
     def __init__(self, 
@@ -96,9 +97,8 @@ class LunarLanderAC:
             trace_actions.append(action)
             trace_rewards.append(reward)
             episode_length += 1
-
-            if self.total_time + episode_length % self.eval_interval == 0 and not for_eval:
-                self.evaluate_model()
+            if (self.total_time + episode_length) % self.eval_interval == 0 and not for_eval:
+                self.evaluate_model(time=self.total_time + episode_length)
 
 
         if for_eval:
@@ -138,17 +138,16 @@ class LunarLanderAC:
 
         return episode_return
     
-    def evaluate_model(self, store_output: bool = True):
+    def evaluate_model(self, time: int | None = None, store_output: bool = True):
         episode_scores = []
         for _ in range(self.n_eval_episodes):
             episode_score = self.train_episode_actorcritic(for_eval=True)
             episode_scores.append(episode_score)
 
         mean_return = np.mean(episode_scores)
-
         if store_output:
             self.eval_returns.append(mean_return)
-            self.eval_times.append(self.total_time)
+            self.eval_times.append(time)
 
         return mean_return
 
@@ -223,6 +222,7 @@ def train_reinforce_model():
     
     reinforcer.plot_learning()
     reinforcer.render_run(n_episodes_to_plot=10)
+
 
 if __name__ == "__main__":
     train_reinforce_model()
