@@ -25,6 +25,7 @@ class LunarLanderREINFORCE:
                  backup_depth: int = 10,
                  eval_interval: int = 2000,     # evaluate every N training steps
                  n_eval_episodes: int = 5,        # average eval rewards over N episodes
+                 num_training_steps: int = 200_000
                  ):
         
         self.gamma = gamma
@@ -36,6 +37,7 @@ class LunarLanderREINFORCE:
         self.n_steps = backup_depth
         self.eval_interval = eval_interval
         self.n_eval_episodes = n_eval_episodes
+        self.num_training_steps = num_training_steps
 
         if early_stopping_return is None:   # if not specified, then take from env
             self.early_stopping_return = self.env.spec.reward_threshold
@@ -146,8 +148,13 @@ class LunarLanderREINFORCE:
         return - (log_probabilities * weights + self.entropy_reg_factor * policy.entropy()).mean()
 
 
-    def train_model(self, num_episodes: int):
-        for _ in tqdm(range(num_episodes), total=num_episodes):
+    def train_model(self, time: int | None = None):
+        # for _ in tqdm(range(num_episodes), total=num_episodes):
+        pbar = tqdm(total=self.num_training_steps)
+        curtime = 0
+        while self.total_time < self.num_training_steps:
+            pbar.update(self.total_time - curtime)
+            curtime = self.total_time
             batch_return = self.train_batch_reinforce()
             if batch_return < self.early_stopping_return:
                 continue
@@ -155,6 +162,7 @@ class LunarLanderREINFORCE:
             if self.do_early_stopping():
                 print("STOPPING EARLY LOL")
                 break
+        pbar.close()
 
     def do_early_stopping(self):
         eval_score = self.evaluate_model(store_output=False)
@@ -202,7 +210,7 @@ def train_reinforce_model():
     reinforcer = LunarLanderREINFORCE(**model_params)
 
     try:
-        reinforcer.train_model(num_episodes=100)
+        reinforcer.train_model(num_episodes=200)
     except KeyboardInterrupt:
         pass
     reinforcer.render_run(n_episodes_to_plot=10)
