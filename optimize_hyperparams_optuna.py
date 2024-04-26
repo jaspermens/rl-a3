@@ -6,8 +6,8 @@ from babymode_reinforce import LunarLanderREINFORCE
 def objective_AC(trial) -> float:
     lr = 10**trial.suggest_float("log_lr", -4, -2)
     gamma = trial.suggest_float("gamma", .9, 1)
-    entropy_reg_factor = trial.suggest_float("eta", 0, 1)
-    backup_depth = trial.suggest_int("backup_depth", 10, 100)
+    entropy_reg_factor = trial.suggest_float("eta", 1e-5, 1, log=True)
+    backup_depth = trial.suggest_int("backup_depth", 10, 200, step=5)
     
     model_params = {
         'lr': lr,
@@ -59,7 +59,8 @@ def objective_reinforce(trial) -> float:
 
 
 def do_study():
-    study = optuna.create_study(direction="maximize")
+    study = optuna.create_study(direction="maximize", 
+                                sampler=optuna.samplers.GPSampler)
     study.optimize(objective_reinforce, n_trials=10)
     
     print("best params:", study.best_params)

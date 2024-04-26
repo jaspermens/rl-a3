@@ -160,7 +160,7 @@ class LunarLanderAC:
         log_probabilities = policy.log_prob(actions)
         return - (log_probabilities * advantages + self.entropy_reg_factor * policy.entropy()).sum()
 
-    def train_model(self, num_episodes: int = 1000) -> None:
+    def train_model(self) -> None:
         # for _ in tqdm(range(num_episodes), total=num_episodes):
         pbar = tqdm(total=self.num_training_steps)
         curtime = 0
@@ -221,7 +221,7 @@ def train_reinforce_model():
     reinforcer = LunarLanderAC(**model_params)
 
     try:
-        reinforcer.train_model(num_episodes=1000)
+        reinforcer.train_model()
     except KeyboardInterrupt:
         pass
     
