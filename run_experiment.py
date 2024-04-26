@@ -3,16 +3,16 @@ import matplotlib.pyplot as plt
 from babymode_actorcritic import LunarLanderAC
 
 #Parameters
-num_repetitions = 2
-training_episode = 1000
+num_repetitions = 5
+training_steps = 400_000
 model_params = {
             'lr': 0.001,
-            'batch_size': 1024,
             'gamma': .99,
             'early_stopping_return': None,
             'entropy_reg_factor': 0.1,
             'backup_depth': 500,
-            'envname': "LunarLander-v2"
+            'envname': "LunarLander-v2",
+            'num_training_steps' : training_steps
             }
 save_figure = False
 
