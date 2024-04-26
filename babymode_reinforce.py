@@ -16,21 +16,29 @@ from reinforce_policy_net import PolicyNet
 class LunarLanderREINFORCE:
     """Main class implementing the REINFORCE algorithm on box2d gym environments"""
     def __init__(self, 
-                 env: gym.Env,                      # gym environment we'll be training in
+                 envname: str,                      # gym environment we'll be training in
                  lr: float,                         # learning rate
                  batch_size: int,                   # (only used with experience replay)
                  gamma: float = 1,                  
                  entropy_reg_factor: float = .1,
                  early_stopping_return: int | None = None, # critical reward value for early stopping
+                 backup_depth: int = 10,
+                 eval_interval: int = 2000,     # evaluate every N training steps
+                 n_eval_episodes: int = 5,        # average eval rewards over N episodes
                  ):
         
         self.gamma = gamma
         self.batch_size = batch_size
-        self.env = env  
+        self.envname = envname
+        self.env = gym.make(envname)  
+        self.eval_env = gym.make(envname)
         self.entropy_reg_factor = entropy_reg_factor
+        self.n_steps = backup_depth
+        self.eval_interval = eval_interval
+        self.n_eval_episodes = n_eval_episodes
 
         if early_stopping_return is None:   # if not specified, then take from env
-            self.early_stopping_return = env.spec.reward_threshold
+            self.early_stopping_return = self.env.spec.reward_threshold
         else:
             self.early_stopping_return = early_stopping_return
 
@@ -38,8 +46,8 @@ class LunarLanderREINFORCE:
         self.reset_counters()
         
         # init the model and agent
-        n_inputs = env.observation_space.shape[0]
-        n_actions = env.action_space.n
+        n_inputs = self.env.observation_space.shape[0]
+        n_actions = self.env.action_space.n
         self.policy_net = PolicyNet(n_inputs=n_inputs, n_actions=n_actions)
 
         self.optimizer = Adam(self.policy_net.parameters(), lr=lr)
@@ -47,11 +55,15 @@ class LunarLanderREINFORCE:
     def reset_counters(self):
         self.episode_returns = [] 
         self.episode_times = []
+        self.eval_returns = []
+        self.eval_times = []
         self.total_time = 0
 
 
-    def train_batch_reinforce(self, freeze_gradients: bool = False):
+    def train_batch_reinforce(self, for_eval: bool = False, freeze_gradients: bool = False):
         """Fills one batch with experiences and updates the network"""
+        
+        env = self.eval_env if for_eval else self.env
         state, _ = self.env.reset()
 
         done = False
@@ -75,6 +87,10 @@ class LunarLanderREINFORCE:
             episode_length += 1
             self.total_time += 1
 
+            if not for_eval:
+                if self.total_time % self.eval_interval == 0:
+                    self.evaluate_model()
+
             if done:    
                 # compute episode rewards etc
                 batch_returns.append(episode_return)
@@ -90,8 +106,11 @@ class LunarLanderREINFORCE:
                 episode_return = 0
                 episode_length = 0
 
-                if len(batch_states) > self.batch_size:
+                if for_eval:
+                    return np.mean(batch_returns)
+                elif len(batch_states) > self.batch_size:
                     break
+
         # compute and bp loss
 
         if freeze_gradients:
@@ -107,6 +126,20 @@ class LunarLanderREINFORCE:
 
         return np.mean(batch_returns)
     
+
+    def evaluate_model(self, store_output: bool = True):
+        episode_scores = []
+        for _ in range(self.n_eval_episodes):
+            episode_score = self.train_batch_reinforce(for_eval=True)
+            episode_scores.append(episode_score)
+
+        mean_return = np.mean(episode_scores)
+        if store_output:
+            self.eval_returns.append(mean_return)
+            self.eval_times.append(self.total_time)
+        return mean_return
+
+
     def loss_function(self, states, actions, weights):
         policy = self.policy_net.get_policy(states)
         log_probabilities = policy.log_prob(actions)
@@ -124,19 +157,12 @@ class LunarLanderREINFORCE:
                 break
 
     def do_early_stopping(self):
-        eval_returns = []
-        for _ in range(5):
-            eval_return = self.train_batch_reinforce(freeze_gradients=True)
-            eval_returns.append(eval_return)
+        eval_score = self.evaluate_model(store_output=False)
+        return eval_score >= self.early_stopping_return
 
-        if np.mean(eval_returns) >= self.early_stopping_return:
-            return True
-
-        return False
-
-    def dqn_render_run(self, env: gym.Env, n_episodes_to_plot: int = 10) -> None:
+    def render_run(self, n_episodes_to_plot: int = 10) -> None:
         """Runs a single evaluation episode while rendering the environment for visualization."""
-
+        env = gym.make(self.envname, render_mode="human")
         env.reset(seed=4309)
         for _ in range(n_episodes_to_plot):
             state, _ = env.reset()  # Uses the newly created environment with render=human
@@ -150,31 +176,37 @@ class LunarLanderREINFORCE:
 
                 done = terminated or truncated
 
-            self.env.reset()
+            env.reset()
         
     def plot_learning(self):
         fig, ax = plt.subplots()
         ax.grid(True, alpha=.5)
-        ax.plot(self.episode_times, self.episode_returns)
+        ax.plot(self.eval_times, self.eval_returns)
+        ax.set_xlabel("Training steps")
+        ax.set_ylabel("Training Episode Return")
         plt.show()
 
 
 def train_reinforce_model(): 
     model_params = {
-            'lr': 0.001,  
+            'lr': 0.001,
             'batch_size': 1024,
-            'gamma': .999,
-            'early_stopping_return': 100,
-            'entropy_reg_factor': 0.01,
+            'gamma': .99,
+            'early_stopping_return': None,
+            'entropy_reg_factor': 0.1,
+            'backup_depth': 500,
+            'envname': "LunarLander-v2"
     }
 
     env = gym.make("LunarLander-v2")
-    reinforcer = LunarLanderREINFORCE(env=env, **model_params)
+    reinforcer = LunarLanderREINFORCE(**model_params)
 
-    reinforcer.train_model(num_episodes=100)
-    watch_env = gym.make("LunarLander-v2", render_mode='human')
+    try:
+        reinforcer.train_model(num_episodes=100)
+    except KeyboardInterrupt:
+        pass
+    reinforcer.render_run(n_episodes_to_plot=10)
     reinforcer.plot_learning()
-    reinforcer.dqn_render_run(env=watch_env)
 
 if __name__ == "__main__":
     train_reinforce_model()
