@@ -160,7 +160,7 @@ class LunarLanderAC:
         log_probabilities = policy.log_prob(actions)
         return - (log_probabilities * advantages + self.entropy_reg_factor * policy.entropy()).sum()
 
-    def train_model(self, num_episodes: int):
+    def train_model(self, num_episodes: int = 1000) -> None:
         # for _ in tqdm(range(num_episodes), total=num_episodes):
         pbar = tqdm(total=self.num_training_steps)
         curtime = 0
@@ -173,7 +173,7 @@ class LunarLanderAC:
             if self.do_early_stopping():
                 print("STOPPING EARLY LOL")
                 break
-
+        
         pbar.close()
 
     def do_early_stopping(self):
