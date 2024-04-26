@@ -16,7 +16,6 @@ class LunarLanderAC:
     def __init__(self, 
                  envname: str,                      # gym environment we'll be training in
                  lr: float,                         # learning rate
-                 batch_size: int,                   # (only used with experience replay)
                  gamma: float = 1,                  
                  entropy_reg_factor: float = .1,
                  early_stopping_return: int | None = None, # critical reward value for early stopping
@@ -26,7 +25,6 @@ class LunarLanderAC:
                  ):
         
         self.gamma = gamma
-        self.batch_size = batch_size
         self.envname = envname
         self.env = gym.make(envname)  
         self.eval_env = gym.make(envname)
@@ -98,8 +96,7 @@ class LunarLanderAC:
             trace_rewards.append(reward)
             episode_length += 1
             if (self.total_time + episode_length) % self.eval_interval == 0 and not for_eval:
-                self.evaluate_model(time=self.total_time + episode_length)
-
+                self.evaluate_model(time=self.total_time + episode_length, store_output=True)
 
         if for_eval:
             return episode_return
@@ -204,19 +201,19 @@ class LunarLanderAC:
 
 def train_reinforce_model(): 
     model_params = {
-            'lr': 0.001,
+            'lr': 5e-4,
             'batch_size': 1024,
             'gamma': .99,
             'early_stopping_return': None,
             'entropy_reg_factor': 0.1,
-            'backup_depth': 500,
+            'backup_depth': 100,
             'envname': "LunarLander-v2"
     }
 
     reinforcer = LunarLanderAC(**model_params)
 
     try:
-        reinforcer.train_model(num_episodes=2000)
+        reinforcer.train_model(num_episodes=1000)
     except KeyboardInterrupt:
         pass
     
