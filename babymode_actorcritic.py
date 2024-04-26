@@ -96,15 +96,15 @@ class LunarLanderAC:
             trace_actions.append(action)
             trace_rewards.append(reward)
             episode_length += 1
-            self.total_time += 1
 
-            if self.total_time % self.eval_interval == 0:
+            if self.total_time + episode_length % self.eval_interval == 0:
                 self.evaluate_model()
 
 
         if for_eval:
             return episode_return
         
+        self.total_time += episode_length
         # use gamma here???
         self.episode_returns.append(episode_return)
         self.episode_times.append(self.total_time)
@@ -197,6 +197,7 @@ class LunarLanderAC:
         fig, ax = plt.subplots()
         ax.grid(True, alpha=.5)
         ax.plot(self.eval_times, self.eval_returns)
+        ax.plot(self.episode_times, self.episode_returns, alpha=.3)
         ax.set_xlabel("Training steps")
         ax.set_ylabel("Training Episode Return")
         plt.show()
@@ -220,8 +221,8 @@ def train_reinforce_model():
     except KeyboardInterrupt:
         pass
     
-    reinforcer.render_run(n_episodes_to_plot=10)
     reinforcer.plot_learning()
+    reinforcer.render_run(n_episodes_to_plot=10)
 
 if __name__ == "__main__":
     train_reinforce_model()
