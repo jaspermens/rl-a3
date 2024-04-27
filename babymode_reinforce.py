@@ -18,7 +18,7 @@ class LunarLanderREINFORCE:
     def __init__(self, 
                  envname: str,                      # gym environment we'll be training in
                  lr: float,                         # learning rate
-                 batch_size: int,                   # (only used with experience replay)
+                 batch_size: int = 1,                   # (only used with experience replay)
                  gamma: float = 1,                  
                  entropy_reg_factor: float = .1,
                  early_stopping_return: int | None = None, # critical reward value for early stopping
