@@ -30,7 +30,7 @@ def objective(trial, model_type: str, num_training_steps: int, num_repeats: int)
 
     finalscores = []
     for _ in range(num_repeats):
-        trainer: PolicyTrainer = model_type(model_params) 
+        trainer = PolicyTrainer(model_params) 
         trainer.train_model()
     
         finalscores.append(trainer.final_reward - trainer.total_time/num_training_steps * 20)
