@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from model_parameters import ModelParameters
 
 
-def objective(trial, modeltype: str, num_training_steps: int, num_repeats: int) -> float:
-    assert modeltype in ['actor_critic', 'REINFORCE']
+def objective(trial, model_type: str, num_training_steps: int, num_repeats: int) -> float:
+    assert model_type in ['actor_critic', 'REINFORCE']
 
     lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
     gamma = trial.suggest_float("gamma", .9, 1)
@@ -19,7 +19,7 @@ def objective(trial, modeltype: str, num_training_steps: int, num_repeats: int) 
     
     model_params = ModelParameters(
         envname = "LunarLander-v2",
-        model_type = "actor_critic",
+        model_type = model_type,
         lr=lr, 
         gamma=gamma, 
         early_stopping_return=None, 
@@ -30,7 +30,7 @@ def objective(trial, modeltype: str, num_training_steps: int, num_repeats: int) 
 
     finalscores = []
     for _ in range(num_repeats):
-        trainer: PolicyTrainer = modeltype(model_params) 
+        trainer: PolicyTrainer = model_type(model_params) 
         trainer.train_model()
     
         finalscores.append(trainer.final_reward - trainer.total_time/num_training_steps * 20)
@@ -42,7 +42,7 @@ def do_study():
     study = optuna.create_study(direction="maximize", 
                                 sampler=optuna.samplers.GPSampler())
     
-    study.optimize(lambda trial: objective(trial, modeltype='actor_critic', num_repeats=2, num_training_steps=1e5), n_trials=5)
+    study.optimize(lambda trial: objective(trial, model_type='actor_critic', num_repeats=2, num_training_steps=1e5), n_trials=5)
     
     print("best params:", study.best_params)
     print("best value:", study.best_value)
