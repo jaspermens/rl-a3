@@ -37,15 +37,15 @@ def objective(trial, model_type: str, num_training_steps: int, num_repeats: int)
         trainer.train_model()
     
         finalscores.append(trainer.final_reward - trainer.total_time/num_training_steps * 20)
-
+    
     return np.mean(finalscores)
-
 
 def do_study():
     study = optuna.create_study(direction="maximize", 
-                                sampler=optuna.samplers.GPSampler())
+                                # sampler=optuna.samplers.GPSampler(),
+                                )
     
-    study.optimize(lambda trial: objective(trial, model_type='REINFORCE', num_repeats=3, num_training_steps=5e5), n_trials=40)
+    study.optimize(lambda trial: objective(trial, model_type='actor_critic', num_repeats=2, num_training_steps=1e4), n_trials=5)
     
     print("best params:", study.best_params)
     print("best value:", study.best_value)

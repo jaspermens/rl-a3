@@ -46,26 +46,16 @@ class PolicyTrainer:
             pbar.update(self.total_time - curtime)              # advance the pbar
             curtime = self.total_time                           #
 
-            ep_states, ep_actions, ep_rewards = self.perform_trace()
-            self.agent.apply_gradient_update(ep_states=ep_states, ep_actions=ep_actions, ep_rewards=ep_rewards)
-
-            ep_return = np.sum(ep_rewards)
-            if ep_return < self.early_stopping_return:
-                continue
-            if self.do_early_stopping():
+            ep_states, ep_actions, ep_rewards, stop_early = self.perform_trace()
+            if stop_early:
                 print("STOPPING EARLY LOL")
                 break
-        else:       # i.e., skip if we stopped early
-            self.final_reward = self.evaluate_model(store_output=False)
-        
+
+            self.agent.apply_gradient_update(ep_states=ep_states, ep_actions=ep_actions, ep_rewards=ep_rewards)
+
         pbar.close()
 
-    def do_early_stopping(self) -> bool:
-        eval_score = self.evaluate_model(store_output=False)
-        self.final_reward = eval_score
-        return eval_score >= self.early_stopping_return
-    
-    def perform_trace(self) -> tuple[list, list, list]:
+    def perform_trace(self) -> tuple[list, list, list, bool]:
         """Performs one epoch of actor-critic training, and return everything needed for gradient updates etc."""
         env = self.env
         
@@ -91,28 +81,30 @@ class PolicyTrainer:
             trace_rewards.append(reward)
             episode_length += 1
             if (self.total_time + episode_length) % self.params.eval_interval == 0:
-                self.evaluate_model(time=self.total_time + episode_length, store_output=True)
-
+                can_stop_early = self.evaluate_model(time=self.total_time + episode_length)
+                if can_stop_early:
+                    return None, None, None, True
+                
         self.total_time += episode_length
         self.episode_returns.append(episode_return)
         self.episode_times.append(self.total_time)
 
-        return trace_states, trace_actions, trace_rewards
+        return trace_states, trace_actions, trace_rewards, False
 
         
     @torch.no_grad
-    def evaluate_model(self, time: int | None = None, store_output: bool = True) -> float:
+    def evaluate_model(self, time: int | None = None) -> float:
         episode_scores = []
         for _ in range(self.params.n_eval_episodes):
             episode_score = self.perform_eval_episode()
             episode_scores.append(episode_score)
 
         mean_return = np.mean(episode_scores)
-        if store_output:
-            self.eval_returns.append(mean_return)
-            self.eval_times.append(time)
 
-        return mean_return
+        self.eval_returns.append(mean_return)
+        self.eval_times.append(time)
+
+        return mean_return >= self.early_stopping_return
 
     @torch.no_grad
     def perform_eval_episode(self) -> float:
@@ -143,16 +135,18 @@ class PolicyTrainer:
 
 
 def train_reinforce_model(): 
-    model_params = ModelParameters(**{
-            'lr': 5e-4,
-            'gamma': .99,
-            'early_stopping_return': None,
-            'entropy_reg_factor': 0.1,
-            'backup_depth': 100,
-            'envname': "CartPole-v1",
-            'num_training_steps': 5e4, 
-            'agent_type': 'REINFORCE',
-    })
+    model_params = ModelParameters(
+            lr = 1e-3,
+            gamma = .97,
+            early_stopping_return = None,
+            entropy_reg_factor = 0.01,
+            backup_depth = 200,
+            envname = "CartPole-v1",
+            num_training_steps = 1e5, 
+            do_bootstrap = False, 
+            do_baseline_sub = True, 
+            agent_type = 'actor_critic', 
+    )
     
     trainer = PolicyTrainer(model_params)
 
