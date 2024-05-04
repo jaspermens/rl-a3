@@ -12,14 +12,17 @@ from model_parameters import ModelParameters
 def objective(trial, model_type: str, num_training_steps: int, num_repeats: int) -> float:
     assert model_type in ['actor_critic', 'REINFORCE']
 
-    lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
-    gamma = trial.suggest_float("gamma", .9, 1)
+    # lr = trial.suggest_float("lr", 1e-4, 1e-3, log=True)
+    lr = 5e-4
+    # gamma = trial.suggest_float("gamma", .9, 1)
+    gamma = .99
     entropy_reg_factor = trial.suggest_float("eta", 1e-5, 1e-2, log=True)
-    backup_depth = trial.suggest_int("backup_depth", 10, 200, step=5)
+    # backup_depth = trial.suggest_int("backup_depth", 10, 200, step=5)
+    backup_depth = 200
     
     model_params = ModelParameters(
         envname = "LunarLander-v2",
-        model_type = model_type,
+        agent_type = model_type,
         lr=lr, 
         gamma=gamma, 
         early_stopping_return=None, 
@@ -42,7 +45,7 @@ def do_study():
     study = optuna.create_study(direction="maximize", 
                                 sampler=optuna.samplers.GPSampler())
     
-    study.optimize(lambda trial: objective(trial, model_type='actor_critic', num_repeats=2, num_training_steps=1e5), n_trials=5)
+    study.optimize(lambda trial: objective(trial, model_type='REINFORCE', num_repeats=3, num_training_steps=5e5), n_trials=40)
     
     print("best params:", study.best_params)
     print("best value:", study.best_value)
