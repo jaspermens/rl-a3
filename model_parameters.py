@@ -16,5 +16,5 @@ class ModelParameters:
     do_baseline_sub: bool = True
 
     def __post_init__(self) -> None:
-        if (not self.do_bootstrap or self.do_baseline_sub) and self.agent_type == "actor_critic":
+        if self.agent_type == "actor_critic" and not (self.do_bootstrap or self.do_baseline_sub):
             raise UserWarning("Need at least either bootstrapping or baseline subtraction for actor-critic!!") 
