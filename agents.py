@@ -1,4 +1,8 @@
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.markers import MarkerStyle
+from matplotlib.transforms import Affine2D
+
 import gymnasium as gym
 
 import torch
@@ -42,6 +46,42 @@ class PolicyBasedAgent(Protocol):
                 state, _, _, done = self.take_step(state, env=env)
 
             env.reset()
+
+    def make_trail_plot(self, n_episodes: int) -> None:
+        env = gym.make(self.params.envname)
+        env.reset(seed=4309)
+
+        fig, ax = plt.subplots(1,1, layout='constrained', dpi=150, figsize=[5,5])
+        ax.xaxis.set_tick_params(direction='in')
+        ax.yaxis.set_tick_params(direction='in')
+
+        for _ in range(n_episodes):
+            state, _ = env.reset()
+            done = False
+            
+            step = 0
+            positions = []
+            rotations = []
+            while not done:
+                state, _, _, done = self.take_step(state, env=env)
+
+                if step % 10 == 0:
+                    positions.append((state[0], state[1]))
+                    rotations.append(state[4])
+
+                step += 1
+
+            ax.plot(*np.array(positions).T, marker='.', markersize=4, linewidth=1, alpha=.8, color='black')
+            for i, rotation in enumerate(rotations):
+                ax.scatter(*positions[i], marker=MarkerStyle('8', 'top', transform=Affine2D().rotate(rotation)), color='red', s=100)
+        
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(0, 2)
+
+        ax.set_aspect('equal')
+
+        plt.savefig("trail_plot.png")
+        plt.show()
 
 
 class REINFORCEAgent(PolicyBasedAgent):
@@ -121,7 +161,8 @@ class ActorCriticAgent(PolicyBasedAgent):
     def _mc_backup_targets(self, rewards):
         backup_targets = np.zeros_like(rewards)
         for t, _ in enumerate(rewards):
-            backup_targets[t] = self.params.gamma**t * np.sum([self.params.gamma**(k-t) * rewards[k] for k in np.arange(t, len(rewards)-1)])
+            backup_targets[t] = self.params.gamma**t * \
+                np.sum([self.params.gamma**(k-t) * rewards[k] for k in np.arange(t, len(rewards)-1)])
 
         return backup_targets
     
