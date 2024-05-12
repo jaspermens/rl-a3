@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from babymode_policybased import PolicyTrainer
 from model_parameters import ModelParameters
 
+from argparse import ArgumentParser
 import os
     
 def train_models(num_repetitions: int, model_params: ModelParameters):
@@ -109,18 +110,65 @@ def plot_training_reportstyle(num_repetitions: int,
 
 if __name__ == "__main__":
     #Parameters
-    training_steps = 1e6
+    parser = ArgumentParser(description="""DQN agent training.""")
+
+
+    parser.add_argument("--filename",
+                        dest='filename',
+                        type=str,
+                        default='test',
+                        help="Filename for the learning progression figure."
+                        )
+    parser.add_argument("--num_training_steps",
+                        type=int,
+                        default=5e5,
+                        help="Max number of training steps."
+                        )
+    parser.add_argument("--num_repetitions",
+                        type=int,
+                        default=5,
+                        help="Number of experiments to average results over."
+                        )
+    parser.add_argument("--env",
+                        type=str,
+                        choices=["CartPole-v1", "LunarLander-v2"],
+                        default="LunarLander-v2",
+                        help="Name of the Gym environment where the DQN will try to learn."
+                        )
+    parser.add_argument("--agent_type",
+                        type=str,
+                        choices=["REINFORCE", "actor_critic"],
+                        default="REINFORCE",
+                        help="Type of agent to train; either 'REINFORCE' or 'actor_critic'",
+                        )    
+    parser.add_argument("--do_bootstrap", 
+                        dest='do_bootstrap', 
+                        action='store_true', 
+                        help="""Train with TD bootstrapping (actor-critic only!)."""
+                        )
+    parser.add_argument("--do_baseline_sub", 
+                        dest='do_baseline_sub', 
+                        action='store_true', 
+                        help="""Train with baseline subtraction (actor-critic only!)."""
+                        )
+    parser.add_argument("--show_plot",
+                        dest='show_plot',
+                        action='store_true',
+                        help="Run without showing the plot at the end of training. (only saves)",
+                        )
+    args = parser.parse_args()
+    
     model_params = ModelParameters(
-                envname = "LunarLander-v2",
+                envname = args.env,
                 lr = 0.0025,
                 gamma = .97,
                 entropy_reg_factor = 0.01,
                 early_stopping_return = None,
-                num_training_steps = training_steps,
-                agent_type = 'actor_critic',
+                num_training_steps = args.num_training_steps,
+                agent_type = args.agent_type,
                 backup_depth = 200,
-                do_bootstrap = True,
-                do_baseline_sub = True,
+                do_bootstrap = args.do_bootstrap,
+                do_baseline_sub = args.do_baseline_sub,
                 )
     
     save_figure = True
@@ -129,7 +177,7 @@ if __name__ == "__main__":
     #               model_params=model_params, 
     #               save_figure=save_figure)
     
-    plot_training_reportstyle(num_repetitions=5, 
+    plot_training_reportstyle(num_repetitions=args.num_repetitions, 
                   model_params=model_params, 
-                  figname='full_ac_pb2',
+                  figname=args.filename,
                   )
