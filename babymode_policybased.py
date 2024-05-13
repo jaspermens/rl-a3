@@ -7,18 +7,18 @@ import gymnasium as gym
 import torch
 
 from model_parameters import ModelParameters
-from agents import ActorCriticAgent 
+from agents import PolicyBasedAgent
 from agents import agents
 
 
 class PolicyTrainer:
-    """Main class handling the training of an actor-critic model in box2d gym environments"""
+    """Main class handling the training of a policy-based model (REINFORCE or AC) in box2d gym environments"""
     def __init__(self, params: ModelParameters):
         self.params = params
         self.env = gym.make(params.envname)  
         self.eval_env = gym.make(params.envname)
 
-        self.agent: ActorCriticAgent = agents[params.agent_type](params)
+        self.agent: PolicyBasedAgent = agents[params.agent_type](params)
 
         if params.early_stopping_return is None:   # if not specified, then take from env
             self.early_stopping_return = self.env.spec.reward_threshold
@@ -136,16 +136,16 @@ class PolicyTrainer:
 
 def train_reinforce_model(): 
     model_params = ModelParameters(
-            lr = 1e-3,
+            lr = 2.5e-3,
             gamma = .97,
             early_stopping_return = None,
             entropy_reg_factor = 0.01,
             backup_depth = 200,
-            envname = "CartPole-v1",
-            num_training_steps = 1e5, 
-            do_bootstrap = False, 
+            envname = "LunarLander-v2",
+            num_training_steps = 1e6 , 
+            do_bootstrap = True, 
             do_baseline_sub = True, 
-            agent_type = 'actor_critic', 
+            agent_type = 'REINFORCE', 
     )
     
     trainer = PolicyTrainer(model_params)
@@ -156,8 +156,8 @@ def train_reinforce_model():
         pass
     
     trainer.plot_learning()
-    trainer.render_run(n_episodes_to_plot=10)
-
+    trainer.agent.make_trail_plot(n_episodes=10)
+    trainer.agent.demonstrate(n_episodes=10)
 
 if __name__ == "__main__":
     train_reinforce_model()

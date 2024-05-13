@@ -107,7 +107,7 @@ class REINFORCEAgent(PolicyBasedAgent):
     def apply_gradient_update(self, ep_states, ep_actions, ep_rewards):
         backup_targets = np.zeros_like(ep_rewards)
         for t, _ in enumerate(ep_rewards):
-            backup_targets[t] = self.params.gamma**t * np.sum([self.params.gamma**(k-t) * ep_rewards[k] for k in np.arange(t, len(ep_rewards)-1)])
+            backup_targets[t] = np.sum([self.params.gamma**(k-t) * ep_rewards[k] for k in np.arange(t, len(ep_rewards)-1)])
             # could do gradient update here (i.e., online)
             # or, just sum all of the gradients over the 'batch', which is easier to implement imo
             # so: batch mode (same as our AC implementation)
@@ -161,8 +161,7 @@ class ActorCriticAgent(PolicyBasedAgent):
     def _mc_backup_targets(self, rewards):
         backup_targets = np.zeros_like(rewards)
         for t, _ in enumerate(rewards):
-            backup_targets[t] = self.params.gamma**t * \
-                np.sum([self.params.gamma**(k-t) * rewards[k] for k in np.arange(t, len(rewards)-1)])
+            backup_targets[t] = np.sum([self.params.gamma**(k-t) * rewards[k] for k in np.arange(t, len(rewards)-1)])
 
         return backup_targets
     
@@ -174,15 +173,14 @@ class ActorCriticAgent(PolicyBasedAgent):
         else:
             backup_targets = torch.as_tensor(self._mc_backup_targets(ep_rewards))
 
-        if self.params.do_baseline_sub:
-            values = self.critic_net.get_value(np.array(ep_states)).squeeze()
-            backup_targets = backup_targets - values
+        values = self.critic_net.get_value(np.array(ep_states)).squeeze()
+        advantages = backup_targets - values.detach()
 
         # compute and bp loss
         policy_loss = self._policy_loss(
             torch.as_tensor(np.array(ep_states)), 
             torch.as_tensor(ep_actions), 
-            backup_targets.detach(),
+            advantages if self.params.do_baseline_sub else backup_targets,
         )
         
         self.policy_optimizer.zero_grad() # remove gradients from previous steps
@@ -190,7 +188,7 @@ class ActorCriticAgent(PolicyBasedAgent):
         nn.utils.clip_grad_value_(self.actor_net.parameters(), 100) # clip gradients
         self.policy_optimizer.step()      # apply gradients
         
-        value_loss = backup_targets.square().sum()
+        value_loss = (backup_targets - values).square().sum()
         
         self.value_optimizer.zero_grad() # remove gradients from previous steps
         loss = torch.as_tensor(value_loss)

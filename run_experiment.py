@@ -33,8 +33,8 @@ def train_models(num_repetitions: int, model_params: ModelParameters):
     return eval_times, eval_returns
 
 
-def get_plotdata(num_repetitions: int, model_params: ModelParameters, figname: str = "test"):
-    plotdata_fn = f"plotdata_{figname}.npy"
+def get_plotdata(num_repetitions: int, model_params: ModelParameters, filename: str = "test"):
+    plotdata_fn = f"results/plotdata_{filename}.npy"
     if os.path.exists(plotdata_fn):
         eval_times, eval_returns = np.load(plotdata_fn, allow_pickle=True)
 
@@ -49,7 +49,7 @@ def plot_training(num_repetitions: int,
                   model_params: ModelParameters, 
                   figname: str = "test", 
                   save_figure: bool = True):
-    eval_times, eval_returns = get_plotdata(num_repetitions=num_repetitions, model_params=model_params, figname=figname)
+    eval_times, eval_returns = get_plotdata(num_repetitions=num_repetitions, model_params=model_params, filename=figname)
     
     fig, ax = plt.subplots(figsize=(8,8))
 
@@ -66,7 +66,8 @@ def plot_training(num_repetitions: int,
     ax.legend()
     fig.suptitle(f"{num_repetitions}-repetition averaged evaluation reward")
     if save_figure:
-        plt.savefig("temp_name.png", dpi=500)
+        plt.savefig(f"figures/{figname}.png", dpi=500)
+        plt.close()
     plt.show()
 
 
@@ -75,7 +76,7 @@ def plot_training_reportstyle(num_repetitions: int,
                               figname: str = "test",
                               ):
     
-    eval_times, eval_returns = get_plotdata(num_repetitions=num_repetitions, model_params=model_params, figname=figname)
+    eval_times, eval_returns = get_plotdata(num_repetitions=num_repetitions, model_params=model_params, filename=figname)
     
     fig, ax = plt.subplots(figsize=(8,4.8), 
                           layout="constrained",
@@ -173,9 +174,11 @@ if __name__ == "__main__":
     
     save_figure = True
 
-    # plot_training(num_repetitions=5, 
+    # plot_training(num_repetitions=args.num_repetitions, 
     #               model_params=model_params, 
-    #               save_figure=save_figure)
+    #               save_figure=True,
+    #               figname=args.filename,
+    #               )
     
     plot_training_reportstyle(num_repetitions=args.num_repetitions, 
                   model_params=model_params, 
