@@ -2,7 +2,7 @@
 
 ### Assignment 3 submission for the course Reinforcement Learning 2023/2024 at Leiden University
 
-Contains all the code necessary to compare REINFORCE to various actor-critic implementations in the `LunarLander-v2` gym environment
+Contains all the code necessary to compare REINFORCE to various actor-critic implementations in the `LunarLander-v2` gym environment. Note: for rerunning the experiments, a both a figures and a results directory must exist in the working directory.
 
 ### Code dependencies:
 
